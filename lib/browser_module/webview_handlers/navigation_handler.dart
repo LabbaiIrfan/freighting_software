@@ -5,7 +5,7 @@ import 'package:flutter/services.dart' show SystemNavigator;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 import '../../file_manager/file_handlers.dart';
-import '../../WASTE/youtube_embed_controller.dart';
+import 'youtube_embed_controller.dart';
 import 'javascript_handler.dart'; // Import JavaScript handler for login page check
 
 /// Handles navigation-related actions in the WebView
