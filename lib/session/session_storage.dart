@@ -12,12 +12,16 @@ const String _kPasswordKey = "session_password";
 const String _kSessionExpiry = "session_expiry";
 const String _kLoginTimestamp = "session_login_time";
 const String _kAutoSubmitKey = "session_auto_submit";
-
-// Base URL for the app
 const String _baseUrl = "https://app.freighting.in";
 
-/// Global cookie manager
+// Global cookie manager
 final CookieManager _cookieManager = CookieManager.instance();
+
+/// Logs a message with appropriate emoji prefix
+void _log(String message, {bool isError = false, bool isWarning = false}) {
+  String prefix = isError ? "❌" : (isWarning ? "⚠️" : "✅");
+  developer.log("$prefix $message", name: "SessionManager");
+}
 
 /// Saves all cookies from the current session
 Future<bool> saveSession(InAppWebViewController controller) async {
@@ -25,33 +29,33 @@ Future<bool> saveSession(InAppWebViewController controller) async {
     final prefs = await SharedPreferences.getInstance();
     final cookies = await _cookieManager.getCookies(url: WebUri(_baseUrl));
 
-    if (cookies.isNotEmpty) {
-      // Convert cookies to a JSON-serializable format
-      final cookieData = cookies.map((cookie) => {
-        'name': cookie.name,
-        'value': cookie.value,
-        'domain': cookie.domain,
-        'path': cookie.path,
-        'expiresDate': cookie.expiresDate,
-        'isSecure': cookie.isSecure,
-        'isHttpOnly': cookie.isHttpOnly,
-      }).toList();
-
-      // Store as JSON string
-      await prefs.setString(_kCookiesKey, jsonEncode(cookieData));
-
-      // Set session expiry (default 7 days)
-      final now = DateTime.now();
-      await prefs.setInt(_kSessionExpiry, now.add(const Duration(days: 7)).millisecondsSinceEpoch);
-
-      developer.log("✅ Session saved: ${cookies.length} cookies stored", name: "SessionManager");
-      return true;
-    } else {
-      developer.log("⚠️ No cookies to save", name: "SessionManager");
+    if (cookies.isEmpty) {
+      _log("No cookies to save", isWarning: true);
       return false;
     }
+
+    // Convert cookies to a JSON-serializable format
+    final cookieData = cookies.map((cookie) => {
+      'name': cookie.name,
+      'value': cookie.value,
+      'domain': cookie.domain,
+      'path': cookie.path,
+      'expiresDate': cookie.expiresDate,
+      'isSecure': cookie.isSecure,
+      'isHttpOnly': cookie.isHttpOnly,
+    }).toList();
+
+    // Store as JSON string
+    await prefs.setString(_kCookiesKey, jsonEncode(cookieData));
+
+    // Set session expiry (default 7 days)
+    final now = DateTime.now();
+    await prefs.setInt(_kSessionExpiry, now.add(const Duration(days: 7)).millisecondsSinceEpoch);
+
+    _log("Session saved: ${cookies.length} cookies stored");
+    return true;
   } catch (e) {
-    developer.log("❌ Error saving session: $e", name: "SessionManager");
+    _log("Error saving session: $e", isError: true);
     return false;
   }
 }
@@ -64,117 +68,89 @@ Future<bool> restoreSession(InAppWebViewController controller) async {
     int? expiryTime = prefs.getInt(_kSessionExpiry);
 
     // Check if session is expired
-    if (expiryTime != null) {
-      final now = DateTime.now().millisecondsSinceEpoch;
-      if (now > expiryTime) {
-        developer.log("⚠️ Session expired, clearing cookies", name: "SessionManager");
-        await clearSession();
-        return false;
-      }
+    if (expiryTime != null && DateTime.now().millisecondsSinceEpoch > expiryTime) {
+      _log("Session expired, clearing cookies", isWarning: true);
+      await clearSession();
+      return false;
     }
 
-    if (cookiesJson != null && cookiesJson.isNotEmpty) {
-      try {
-        final List<dynamic> cookiesList = jsonDecode(cookiesJson);
+    if (cookiesJson == null || cookiesJson.isEmpty) {
+      _log("No saved cookies found", isWarning: true);
+      return false;
+    }
 
-        // Clear existing cookies first
-        await _cookieManager.deleteAllCookies();
+    try {
+      final List<dynamic> cookiesList = jsonDecode(cookiesJson);
+      await _cookieManager.deleteAllCookies();
 
-        int restoredCount = 0;
-        for (var cookieData in cookiesList) {
-          try {
-            await _cookieManager.setCookie(
-              url: WebUri(_baseUrl),
-              name: cookieData['name'],
-              value: cookieData['value'],
-              domain: cookieData['domain'],
-              path: cookieData['path'] ?? "/",
-              isSecure: cookieData['isSecure'] ?? true,
-              isHttpOnly: cookieData['isHttpOnly'] ?? false,
-            );
-            restoredCount++;
-          } catch (e) {
-            developer.log("⚠️ Error restoring cookie: $e", name: "SessionManager");
-          }
+      int restoredCount = 0;
+      for (var cookieData in cookiesList) {
+        try {
+          await _cookieManager.setCookie(
+            url: WebUri(_baseUrl),
+            name: cookieData['name'],
+            value: cookieData['value'],
+            domain: cookieData['domain'],
+            path: cookieData['path'] ?? "/",
+            isSecure: cookieData['isSecure'] ?? true,
+            isHttpOnly: cookieData['isHttpOnly'] ?? false,
+          );
+          restoredCount++;
+        } catch (e) {
+          _log("Error restoring cookie: $e", isWarning: true);
         }
-
-        developer.log("✅ Session restored: $restoredCount cookies", name: "SessionManager");
-        return restoredCount > 0;
-      } catch (e) {
-        developer.log("❌ Error parsing cookies: $e", name: "SessionManager");
-        return false;
       }
-    } else {
-      developer.log("⚠️ No saved cookies found", name: "SessionManager");
+
+      _log("Session restored: $restoredCount cookies");
+      return restoredCount > 0;
+    } catch (e) {
+      _log("Error parsing cookies: $e", isError: true);
       return false;
     }
   } catch (e) {
-    developer.log("❌ Error restoring session: $e", name: "SessionManager");
+    _log("Error restoring session: $e", isError: true);
     return false;
   }
 }
 
-/// Saves credentials for auto-login if cookies don't work
+/// Saves credentials for auto-login
 Future<void> saveLoginCredentials(
-    BuildContext context,
-    String username,
-    String password,
-    {bool promptForUpdate = true}) async {
-
+    BuildContext context, String username, String password, {bool promptForUpdate = true}) async {
   final prefs = await SharedPreferences.getInstance();
   String? storedUsername = prefs.getString(_kUsernameKey);
 
   // If we already have different credentials stored
   if (storedUsername != null && storedUsername != username && promptForUpdate) {
-    bool shouldUpdate = await _showUpdateCredentialsDialog(context);
+    bool shouldUpdate = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Update Login Details"),
+        content: const Text("You're logging in with different credentials. Would you like to save these new login details?"),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text("No")),
+          FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text("Yes")),
+        ],
+      ),
+    ) ?? false;
+
     if (!shouldUpdate) return;
   }
 
   // Save the credentials
   await prefs.setString(_kUsernameKey, username);
   await prefs.setString(_kPasswordKey, password);
-
-  // Record login timestamp
   await prefs.setInt(_kLoginTimestamp, DateTime.now().millisecondsSinceEpoch);
 
-  developer.log("✅ Credentials saved for user: $username", name: "SessionManager");
+  _log("Credentials saved for user: $username");
 }
 
-/// Shows a dialog asking if the user wants to update stored credentials
-Future<bool> _showUpdateCredentialsDialog(BuildContext context) async {
-  return await showDialog<bool>(
-    context: context,
-    builder: (context) {
-      return AlertDialog(
-        title: const Text("Update Login Details"),
-        content: const Text(
-            "You're logging in with different credentials. Would you like to save these new login details?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text("No"),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text("Yes"),
-          ),
-        ],
-      );
-    },
-  ) ?? false;
-}
+/// Get/Set auto-submit setting
+Future<bool> isAutoSubmitEnabled() async =>
+    (await SharedPreferences.getInstance()).getBool(_kAutoSubmitKey) ?? true;
 
-/// Get auto-submit setting
-Future<bool> isAutoSubmitEnabled() async {
-  final prefs = await SharedPreferences.getInstance();
-  return prefs.getBool(_kAutoSubmitKey) ?? true; // Default to true
-}
-
-/// Set auto-submit setting
 Future<void> setAutoSubmitEnabled(bool enabled) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool(_kAutoSubmitKey, enabled);
-  developer.log("✅ Auto-submit ${enabled ? 'enabled' : 'disabled'}", name: "SessionManager");
+  await (await SharedPreferences.getInstance()).setBool(_kAutoSubmitKey, enabled);
+  _log("Auto-submit ${enabled ? 'enabled' : 'disabled'}");
 }
 
 /// Attempts to autofill login fields and submit the form
@@ -183,55 +159,47 @@ Future<bool> autofillLogin(InAppWebViewController controller) async {
     final prefs = await SharedPreferences.getInstance();
     String? username = prefs.getString(_kUsernameKey);
     String? password = prefs.getString(_kPasswordKey);
-    bool autoSubmit = await isAutoSubmitEnabled();
 
     if (username == null || password == null) {
-      developer.log("⚠️ No stored credentials for autofill", name: "SessionManager");
+      _log("No stored credentials for autofill", isWarning: true);
       return false;
     }
+
+    bool autoSubmit = await isAutoSubmitEnabled();
 
     // Check if we're on a login page first
-    final hasLoginForm = await controller.evaluateJavascript(source: '''
+    final bool hasLoginForm = await controller.evaluateJavascript(source: '''
       (document.querySelector("input[name='username']") !== null && 
        document.querySelector("input[name='password']") !== null)
-    ''');
+    ''') ?? false;
 
-    if (hasLoginForm != true) {
-      developer.log("⚠️ No login form detected for autofill", name: "SessionManager");
+    if (!hasLoginForm) {
+      _log("No login form detected for autofill", isWarning: true);
       return false;
     }
 
-    // Apply the improved filling approach
+    // Apply the autofill script
     final result = await controller.evaluateJavascript(source: '''
       (function() {
         try {
-          // Get the form elements
           const usernameField = document.querySelector("input[name='username']");
           const passwordField = document.querySelector("input[name='password']");
           const loginForm = usernameField ? usernameField.closest('form') : null;
           
-          if (!usernameField || !passwordField) {
-            console.log("Login fields not found");
-            return false;
-          }
+          if (!usernameField || !passwordField) return false;
           
-          console.log("Starting autofill process");
-          
-          // Update the saved values used by our protection mechanism
+          // Update the saved values
           window.savedUsername = "$username";
           window.savedPassword = "$password";
           
-          // Apply values carefully
+          // Function to fill fields and optionally submit
           const fillFields = () => {
-            // Force focus on username field first
+            // Username field
             usernameField.focus();
-            
-            // Username field - directly set value and trigger events
             usernameField.value = "$username";
             usernameField.setAttribute('data-filled', 'true');
             usernameField.dispatchEvent(new Event('input', { bubbles: true }));
             usernameField.dispatchEvent(new Event('change', { bubbles: true }));
-            usernameField.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
             
             // Small delay between fields
             setTimeout(() => {
@@ -241,17 +209,11 @@ Future<bool> autofillLogin(InAppWebViewController controller) async {
               passwordField.setAttribute('data-filled', 'true');
               passwordField.dispatchEvent(new Event('input', { bubbles: true }));
               passwordField.dispatchEvent(new Event('change', { bubbles: true }));
-              passwordField.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
               
               // Option to submit the form automatically
-              const shouldSubmit = ${autoSubmit.toString()};
-              
-              if (shouldSubmit && loginForm) {
-                // Allow time for form validation
+              if (${autoSubmit.toString()} && loginForm) {
                 setTimeout(() => {
-                  console.log("Attempting to submit login form");
-                  
-                  // Find the submit button with various detection methods
+                  // Find the submit button
                   const submitButton = 
                     loginForm.querySelector('button[type="submit"]') || 
                     loginForm.querySelector('input[type="submit"]') ||
@@ -261,15 +223,9 @@ Future<bool> autofillLogin(InAppWebViewController controller) async {
                       btn.textContent.toLowerCase().includes('log in'));
                   
                   if (submitButton) {
-                    console.log("Found submit button, clicking");
                     submitButton.click();
-                  } else {
-                    console.log("No submit button found, trying form.submit()");
-                    try {
-                      loginForm.submit();
-                    } catch(e) {
-                      console.error("Form submission error:", e);
-                    }
+                  } else if (loginForm.submit) {
+                    try { loginForm.submit(); } catch(e) {}
                   }
                 }, 700);
               }
@@ -279,7 +235,7 @@ Future<bool> autofillLogin(InAppWebViewController controller) async {
           // Execute fill immediately
           fillFields();
           
-          // Backup: Try again after a short delay in case of any timing issues
+          // Backup: Try again after a short delay
           setTimeout(fillFields, 500);
           
           // Create a global function that can be called later if needed
@@ -294,200 +250,108 @@ Future<bool> autofillLogin(InAppWebViewController controller) async {
     ''');
 
     if (result == true) {
-      developer.log("✅ Login fields autofilled successfully" +
-          (autoSubmit ? " with auto-submit" : ""), name: "SessionManager");
+      _log("Login fields autofilled successfully" + (autoSubmit ? " with auto-submit" : ""));
       return true;
     } else {
-      developer.log("⚠️ Autofill failed", name: "SessionManager");
+      _log("Autofill failed", isWarning: true);
       return false;
     }
   } catch (e) {
-    developer.log("❌ Error during autofill: $e", name: "SessionManager");
+    _log("Error during autofill: $e", isError: true);
     return false;
   }
 }
 
 /// Prevent form inputs from being cleared
-/// Prevent form inputs from being cleared with enhanced protection
 Future<void> preventInputClearing(InAppWebViewController controller) async {
   await controller.evaluateJavascript(source: '''
     (function() {
       // Store original values when set
-      let savedUsername = '';
-      let savedPassword = '';
+      window.savedUsername = '';
+      window.savedPassword = '';
       
-      // Function to restore values (will be called from various observers)
+      // Function to restore values
       window.restoreFormValues = function() {
         const usernameField = document.querySelector("input[name='username']");
         const passwordField = document.querySelector("input[name='password']");
         
-        if (usernameField && savedUsername && usernameField.value === '') {
-          console.log('Restoring username field from saved value');
-          usernameField.value = savedUsername;
+        if (usernameField && window.savedUsername && usernameField.value === '') {
+          usernameField.value = window.savedUsername;
           usernameField.dispatchEvent(new Event('input', { bubbles: true }));
         }
         
-        if (passwordField && savedPassword && passwordField.value === '') {
-          console.log('Restoring password field from saved value');
-          passwordField.value = savedPassword;
+        if (passwordField && window.savedPassword && passwordField.value === '') {
+          passwordField.value = window.savedPassword;
           passwordField.dispatchEvent(new Event('input', { bubbles: true }));
         }
       };
       
-      // 1. SAVE VALUES WHEN USER TYPES
+      // Save values when user types
       document.addEventListener('input', function(event) {
         if (event.target.name === 'username' && event.target.value) {
-          savedUsername = event.target.value;
-          console.log('Saved username value:', savedUsername);
+          window.savedUsername = event.target.value;
         }
         if (event.target.name === 'password' && event.target.value) {
-          savedPassword = event.target.value;
-          console.log('Saved password value:', savedPassword);
+          window.savedPassword = event.target.value;
         }
       }, true);
       
-      // 2. MUTATION OBSERVER FOR DOM CHANGES
-      const inputObserver = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-          // Check for attribute changes to value
-          if (mutation.type === 'attributes' && 
-              mutation.attributeName === 'value') {
-              
-            const target = mutation.target;
-            
-            if (target.name === 'username' && target.value === '' && savedUsername) {
-              console.log('Username value was cleared by attribute change');
-              setTimeout(() => restoreFormValues(), 50);
-            }
-            
-            if (target.name === 'password' && target.value === '' && savedPassword) {
-              console.log('Password value was cleared by attribute change');
-              setTimeout(() => restoreFormValues(), 50);
-            }
-          }
-        });
-      });
-      
-      // 3. PROTECT AGAINST VALUE PROPERTY CHANGES
-      function protectInputField(inputField, savedValueName) {
-        if (!inputField) return;
-        
-        // Use Object.defineProperty to intercept value property changes
-        const originalDescriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-        if (originalDescriptor && originalDescriptor.configurable) {
-          Object.defineProperty(inputField, 'value', {
-            set: function(val) {
-              const currentValue = this.value;
-              // Call the original setter
-              originalDescriptor.set.call(this, val);
-              
-              // If the value was cleared and we have a saved value
-              if (val === '' && currentValue && currentValue === window[savedValueName]) {
-                console.log('Value setter intercepted attempt to clear', savedValueName);
-                setTimeout(() => {
-                  if (this.value === '') {
-                    console.log('Restoring value from setter protection');
-                    originalDescriptor.set.call(this, window[savedValueName]);
-                    this.dispatchEvent(new Event('input', { bubbles: true }));
-                  }
-                }, 50);
-              }
-            },
-            get: originalDescriptor.get
-          });
-        }
-      }
-      
-      // 4. SET UP ALL PROTECTION MECHANISMS
+      // Setup mutation observer for form fields
       const setupProtection = function() {
         const usernameField = document.querySelector("input[name='username']");
         const passwordField = document.querySelector("input[name='password']");
         
+        const inputObserver = new MutationObserver(function() {
+          setTimeout(window.restoreFormValues, 50);
+        });
+        
         if (usernameField) {
-          console.log("Setting up protection for username field");
-          // Make the saved value available to our protection function
-          window.savedUsername = savedUsername;
-          
-          // Add mutation observer
           inputObserver.observe(usernameField, { 
             attributes: true, 
             attributeFilter: ['value'] 
           });
           
-          // Add property descriptor protection
-          protectInputField(usernameField, 'savedUsername');
-          
-          // Save initial value if present
           if (usernameField.value) {
-            savedUsername = usernameField.value;
-            window.savedUsername = savedUsername;
+            window.savedUsername = usernameField.value;
           }
         }
         
         if (passwordField) {
-          console.log("Setting up protection for password field");
-          // Make the saved value available to our protection function
-          window.savedPassword = savedPassword;
-          
-          // Add mutation observer  
           inputObserver.observe(passwordField, { 
             attributes: true, 
             attributeFilter: ['value'] 
           });
           
-          // Add property descriptor protection
-          protectInputField(passwordField, 'savedPassword');
-          
-          // Save initial value if present
           if (passwordField.value) {
-            savedPassword = passwordField.value;
-            window.savedPassword = savedPassword;
+            window.savedPassword = passwordField.value;
           }
         }
       };
       
-      // Setup protection immediately
+      // Run setup immediately and after a delay
       setupProtection();
-      
-      // Also handle dynamic forms by checking again after a delay
       setTimeout(setupProtection, 500);
       
-      // 5. BACKUP PROTECTION: PERIODIC CHECK
-      setInterval(function() {
-        const usernameField = document.querySelector("input[name='username']");
-        const passwordField = document.querySelector("input[name='password']");
-        
-        if (usernameField && savedUsername && usernameField.value === '') {
-          console.log('Periodic check: Username field was cleared');
-          restoreFormValues();
-        }
-        
-        if (passwordField && savedPassword && passwordField.value === '') {
-          console.log('Periodic check: Password field was cleared');
-          restoreFormValues();
-        }
-      }, 300);
+      // Periodic check as backup
+      setInterval(window.restoreFormValues, 300);
     })();
   ''');
 }
 
+/// Clear all session data
 Future<void> clearSession() async {
   try {
     final prefs = await SharedPreferences.getInstance();
-
-    // Clear stored credentials but keep username for convenience
     String? username = prefs.getString(_kUsernameKey);
+
     await prefs.remove(_kPasswordKey);
     await prefs.remove(_kCookiesKey);
     await prefs.remove(_kSessionExpiry);
-
-    // Clear all cookies
     await _cookieManager.deleteAllCookies();
 
-    developer.log("✅ Session cleared" + (username != null ? " for user: $username" : ""),
-        name: "SessionManager");
+    _log("Session cleared" + (username != null ? " for user: $username" : ""));
   } catch (e) {
-    developer.log("❌ Error clearing session: $e", name: "SessionManager");
+    _log("Error clearing session: $e", isError: true);
   }
 }
 
@@ -502,12 +366,76 @@ Future<bool> isLoggedIn() async {
       return false;
     }
 
-    // Check if session is expired
-    final now = DateTime.now().millisecondsSinceEpoch;
-    return now < expiryTime;
+    return DateTime.now().millisecondsSinceEpoch < expiryTime;
   } catch (e) {
-    developer.log("⚠️ Error checking login status: $e", name: "SessionManager");
+    _log("Error checking login status: $e", isWarning: true);
     return false;
   }
 }
 
+Future<bool> integrateExternalPasswordManager(InAppWebViewController controller) async {
+  try {
+    // This function will detect if an external password manager (like Google's) has filled the form
+    // and will help with proper form submission
+    final result = await controller.evaluateJavascript(source: '''
+      (function() {
+        try {
+          const usernameField = document.querySelector("input[name='username']");
+          const passwordField = document.querySelector("input[name='password']");
+          const loginForm = usernameField ? usernameField.closest('form') : null;
+          
+          if (!usernameField || !passwordField || !loginForm) return false;
+          
+          // Check if fields are already filled by external password manager
+          const isPreFilled = usernameField.value.length > 0 && passwordField.value.length > 0;
+          
+          if (isPreFilled) {
+            console.log("Detected pre-filled values from password manager");
+            
+            // Save the values to the app's variables as well
+            window.savedUsername = usernameField.value;
+            window.savedPassword = passwordField.value;
+            
+            // Ensure input events are fired so the website recognizes the values
+            usernameField.dispatchEvent(new Event('input', { bubbles: true }));
+            passwordField.dispatchEvent(new Event('input', { bubbles: true }));
+            
+            // Find the submit button
+            const submitButton = 
+              loginForm.querySelector('button[type="submit"]') || 
+              loginForm.querySelector('input[type="submit"]') ||
+              Array.from(loginForm.querySelectorAll('button')).find(btn => 
+                btn.textContent.toLowerCase().includes('sign in') || 
+                btn.textContent.toLowerCase().includes('login') ||
+                btn.textContent.toLowerCase().includes('log in'));
+            
+            // Delay and click the submit button
+            setTimeout(() => {
+              if (submitButton) {
+                submitButton.click();
+                return true;
+              } else if (loginForm.submit) {
+                try { 
+                  loginForm.submit(); 
+                  return true;
+                } catch(e) {
+                  console.error("Error submitting form:", e);
+                }
+              }
+            }, 500);
+          }
+          
+          return isPreFilled;
+        } catch(e) {
+          console.error("Integration error:", e);
+          return false;
+        }
+      })();
+    ''');
+
+    return result == true;
+  } catch (e) {
+    print("Error during external password manager integration: $e");
+    return false;
+  }
+}

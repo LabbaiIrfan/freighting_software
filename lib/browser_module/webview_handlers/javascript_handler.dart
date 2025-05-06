@@ -35,65 +35,83 @@ class JSHandler {
   /// Inject custom JavaScript into the page
   static Future<void> injectJavaScript(InAppWebViewController controller) async {
     await controller.evaluateJavascript(source: '''
-      // Set up account switch detection
-      window.handleAccountSwitch = function() {
-        window.flutter_inappwebview.callHandler('appHandler', {type: 'account_switch'});
-        console.log('account_switch');
-      };
-      
-      // Attach listeners to account links
-      document.querySelectorAll('a.account, .logout-btn, button.logout').forEach(element => {
-        element.addEventListener('click', function(event) {
-          handleAccountSwitch();
-        });
+    // Set up account switch detection
+    window.handleAccountSwitch = function() {
+      window.flutter_inappwebview.callHandler('appHandler', {type: 'account_switch'});
+      console.log('account_switch');
+    };
+    
+    // Attach listeners to account links
+    document.querySelectorAll('a.account, .logout-btn, button.logout').forEach(element => {
+      element.addEventListener('click', function(event) {
+        handleAccountSwitch();
       });
+    });
+    
+    // Hook form submissions on login page
+    if (document.querySelector('form') && document.querySelector("input[name='username']")) {
+      const loginForm = document.querySelector('form');
       
-      // Hook form submissions on login page
-      if (document.querySelector('form') && document.querySelector("input[name='username']")) {
-        const loginForm = document.querySelector('form');
-        
-        // Add autocomplete="off" to the form and all inputs
-        loginForm.setAttribute('autocomplete', 'off');
-        loginForm.setAttribute('data-lpignore', 'true'); // LastPass ignore
-        
-        // Add attributes to disable password manager for all fields
-        loginForm.querySelectorAll('input').forEach(input => {
-          input.setAttribute('autocomplete', 'off');
-          input.setAttribute('data-lpignore', 'true');
-          input.setAttribute('data-form-type', 'other'); // Safari
-          input.setAttribute('autofill', 'off'); // Chrome
-        });
-        
-        loginForm.addEventListener('submit', function(event) {
-          const username = document.querySelector("input[name='username']").value;
-          const password = document.querySelector("input[name='password']").value;
-          if (username && password) {
-            window.flutter_inappwebview.callHandler('appHandler', {
-              type: 'login_submit',
-              username: username,
-              password: password
-            });
-          }
-        });
-      }
+      // Enable password managers
+      loginForm.setAttribute('autocomplete', 'on');
       
-      // Prevent Google Password Manager's autofill popup
-      document.addEventListener('DOMContentLoaded', function() {
-        // Prevent password saving dialog
-        if (window.history && window.history.pushState) {
-          // Create a "never save" form with random name for password managers to attach to
-          const dummyForm = document.createElement('form');
-          dummyForm.style.display = 'none';
-          dummyForm.setAttribute('autocomplete', 'off');
-          
-          // Random unique ID to avoid detection patterns
-          const randomId = 'dummy-form-' + Math.random().toString(36).substring(2, 15);
-          dummyForm.id = randomId;
-          
-          document.body.appendChild(dummyForm);
+      // Set correct autocomplete attributes for password managers
+      loginForm.querySelectorAll('input').forEach(input => {
+        if (input.getAttribute('name') === 'username') {
+          input.setAttribute('autocomplete', 'username');
+        } else if (input.getAttribute('name') === 'password') {
+          input.setAttribute('autocomplete', 'current-password');
         }
       });
-    ''');
+      
+      // Handle form submission
+      loginForm.addEventListener('submit', function(event) {
+        const username = document.querySelector("input[name='username']").value;
+        const password = document.querySelector("input[name='password']").value;
+        if (username && password) {
+          window.flutter_inappwebview.callHandler('appHandler', {
+            type: 'login_submit',
+            username: username,
+            password: password
+          });
+          
+          // Save credentials to the app's session management
+          window.savedUsername = username;
+          window.savedPassword = password;
+        }
+      });
+    }
+    
+    // Create a MutationObserver to detect when Google Password Manager fills the form
+    if (document.querySelector("input[name='username']") && document.querySelector("input[name='password']")) {
+      const usernameField = document.querySelector("input[name='username']");
+      const passwordField = document.querySelector("input[name='password']");
+      
+      const observer = new MutationObserver(function(mutations) {
+        // Check if both fields have values (indicating password manager filled them)
+        if (usernameField.value && passwordField.value) {
+          console.log("Password manager detected");
+          
+          // Save values to the app's variables
+          window.savedUsername = usernameField.value;
+          window.savedPassword = passwordField.value;
+        }
+      });
+      
+      // Watch both fields for value changes
+      observer.observe(usernameField, { attributes: true, attributeFilter: ['value'] });
+      observer.observe(passwordField, { attributes: true, attributeFilter: ['value'] });
+      
+      // Also watch for direct value changes
+      usernameField.addEventListener('input', function() {
+        if (usernameField.value) window.savedUsername = usernameField.value;
+      });
+      
+      passwordField.addEventListener('input', function() {
+        if (passwordField.value) window.savedPassword = passwordField.value;
+      });
+    }
+  ''');
   }
 
   /// Check if the current page is a login page
